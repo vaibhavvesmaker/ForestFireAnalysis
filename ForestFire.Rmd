@@ -1,0 +1,152 @@
+# Forest Fire Analysis Script
+# Author: Vaibhav Vesmaker
+# Date: 02/18/2025
+
+# ---------------------------
+# 1. SETUP & CONFIGURATION
+# ---------------------------
+
+# Load required packages
+library(tidyverse)   # Data manipulation and visualization
+library(patchwork)   # For combining multiple plots
+library(viridis)     # Colorblind-friendly color scales
+
+# Set global theme for all plots
+theme_set(theme_minimal() + 
+            theme(plot.title = element_text(face = "bold", size = 14),
+                  axis.title = element_text(size = 12)))
+
+# ---------------------------
+# 2. DATA LOADING & CLEANING
+# ---------------------------
+
+# Load data with proper factor handling
+forest_data <- read_csv("forestfires.csv",
+                       col_types = cols(
+                         # Define categorical variables with meaningful levels
+                         month = col_factor(levels = tolower(month.abb)),
+                         day = col_factor(levels = c("sun", "mon", "tue", "wed", 
+                                                   "thu", "fri", "sat"))
+                       )) %>%
+  # Add transformed fire area (log(x+1) handles zeros and skewness)
+  mutate(log_area = log1p(area)) %>%
+  # Reorder months chronologically
+  mutate(month = fct_relevel(month, tolower(month.abb)))
+
+# ---------------------------
+# 3. TEMPORAL ANALYSIS
+# ---------------------------
+
+# 3.1 Monthly Fire Frequency ----
+monthly_counts <- forest_data %>%
+  count(month, name = "total_fires") %>%
+  complete(month, fill = list(total_fires = 0))  # Ensure all months represented
+
+month_plot <- ggplot(monthly_counts, 
+                    aes(month, total_fires, fill = total_fires)) +
+  geom_col() +
+  scale_fill_viridis_c(option = "magma", direction = -1) +
+  labs(title = "Monthly Fire Distribution",
+       subtitle = "Peak fire activity in late summer months",
+       x = NULL, y = "Number of Fires",
+       fill = "Fire Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# 3.2 Daily Fire Frequency ----
+daily_counts <- forest_data %>%
+  count(day, name = "total_fires")
+
+day_plot <- ggplot(daily_counts, aes(day, total_fires, fill = day)) +
+  geom_col(show.legend = FALSE) +
+  scale_fill_brewer(palette = "Dark2") +
+  labs(title = "Weekly Fire Distribution",
+       subtitle = "Slightly higher incidence on weekends",
+       x = "Day of Week", y = "Number of Fires")
+
+# Combine temporal plots
+temporal_analysis <- (month_plot | day_plot) + 
+  plot_annotation(tag_levels = "A")
+ggsave("temporal_analysis.png", temporal_analysis, width = 12, height = 6)
+
+# ---------------------------
+# 4. WEATHER PATTERN ANALYSIS
+# ---------------------------
+
+# 4.1 Boxplot Generator Function ----
+generate_boxplots <- function(variable) {
+  ggplot(forest_data) +
+    aes(x = month, y = .data[[variable]], fill = month) +
+    geom_boxplot(alpha = 0.8) +
+    scale_fill_viridis_d() +
+    labs(title = glue::glue("Monthly {toupper(variable)} Distribution"),
+         x = NULL, y = variable) +
+    theme(legend.position = "none",
+          axis.text.x = element_text(angle = 45, hjust = 1))
+}
+
+# Generate all weather boxplots
+weather_vars <- c("temp", "RH", "wind", "rain", "FFMC", "DMC", "DC", "ISI")
+weather_plots <- map(weather_vars, generate_boxplots)
+
+# Combine into grid
+weather_grid <- wrap_plots(weather_plots, ncol = 2) + 
+  plot_annotation(title = "Monthly Weather Patterns")
+ggsave("weather_patterns.png", weather_grid, width = 14, height = 16)
+
+# ---------------------------
+# 5. FIRE SIZE RELATIONSHIPS
+# ---------------------------
+
+# 5.1 Scatterplot Generator Function ----
+generate_scatterplot <- function(predictor) {
+  ggplot(forest_data) +
+    aes(x = .data[[predictor]], y = log_area) +
+    geom_point(alpha = 0.6, color = "#E69F00") +
+    geom_smooth(method = "loess", color = "#009E73") +
+    labs(title = glue::glue("Fire Size vs. {toupper(predictor)}"),
+         x = predictor, y = "Log(Area + 1)") +
+    scale_x_continuous(n.breaks = 6)
+}
+
+# Generate all relationship plots
+relationship_plots <- map(weather_vars, generate_scatterplot)
+
+# Combine into grid
+relationship_grid <- wrap_plots(relationship_plots, ncol = 2) + 
+  plot_annotation(title = "Fire Size Relationships")
+ggsave("fire_relationships.png", relationship_grid, width = 14, height = 16)
+
+# ---------------------------
+# 6. CORRELATION ANALYSIS
+# ---------------------------
+
+# Calculate correlation matrix
+cor_matrix <- forest_data %>%
+  select(all_of(weather_vars), log_area) %>%
+  cor(method = "spearman")  # Non-parametric correlation
+
+# Visualize correlation matrix
+cor_plot <- cor_matrix %>%
+  as.data.frame() %>%
+  rownames_to_column("var1") %>%
+  pivot_longer(-var1, names_to = "var2") %>%
+  ggplot(aes(var1, var2, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_viridis_c(option = "plasma", limits = c(-1, 1)) +
+  labs(title = "Variable Correlation Matrix",
+       x = NULL, y = NULL, fill = "Correlation") +
+  coord_fixed()
+
+ggsave("correlation_matrix.png", cor_plot, width = 8, height = 7)
+
+# ---------------------------
+# 7. SAVE PROCESSED DATA
+# ---------------------------
+
+# Save augmented dataset
+write_csv(forest_data, "processed_forest_fires.csv")
+
+# Print completion message
+message("Analysis complete! Check working directory for:")
+message("- 4 visualization files (png)")
+message("- Processed dataset (processed_forest_fires.csv)")
