@@ -1,7 +1,7 @@
 ```markdown
 # Forest Fire Analysis Project
 
-![Example Visualization](images/fire_patterns.png) *Example visualization from the analysis*
+
 
 ## Project Overview
 This analytical project examines forest fire patterns and relationships between environmental factors and fire characteristics using historical data from Portugal's Montesinho National Park. The analysis focuses on temporal patterns, weather correlations, and fire size relationships.
