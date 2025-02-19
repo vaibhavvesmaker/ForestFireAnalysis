@@ -1,6 +1,6 @@
 ```markdown
 # Forest Fire Analysis Project
-
+ 
 
 
 ## Project Overview
